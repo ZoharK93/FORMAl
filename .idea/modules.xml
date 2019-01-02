@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/HW-Definitions/HW-Definitions.iml" filepath="$PROJECT_DIR$/HW-Definitions/HW-Definitions.iml" />
+      <module fileurl="file://$PROJECT_DIR$/HW-Implementation/HW-Implementation.iml" filepath="$PROJECT_DIR$/HW-Implementation/HW-Implementation.iml" />
+      <module fileurl="file://$PROJECT_DIR$/HW-Tests/HW-Tests.iml" filepath="$PROJECT_DIR$/HW-Tests/HW-Tests.iml" />
+    </modules>
+  </component>
+</project>
