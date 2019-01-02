@@ -1,0 +1,7 @@
+@startuml
+actor A
+participant ui
+
+A --> ui: hello
+
+@enduml
