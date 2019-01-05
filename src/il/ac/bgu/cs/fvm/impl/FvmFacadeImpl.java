@@ -23,9 +23,12 @@ import il.ac.bgu.cs.fvm.transitionsystem.AlternatingSequence;
 import il.ac.bgu.cs.fvm.transitionsystem.Transition;
 import il.ac.bgu.cs.fvm.transitionsystem.TransitionSystem;
 import il.ac.bgu.cs.fvm.util.Pair;
+import il.ac.bgu.cs.fvm.verification.VerificationFailed;
 import il.ac.bgu.cs.fvm.verification.VerificationResult;
 import il.ac.bgu.cs.fvm.programgraph.ParserBasedActDef;
 import il.ac.bgu.cs.fvm.programgraph.ParserBasedCondDef;
+import il.ac.bgu.cs.fvm.verification.VerificationSucceeded;
+
 import java.io.InputStream;
 import java.util.*;
 
@@ -444,6 +447,12 @@ public class FvmFacadeImpl implements FvmFacade {
         Set<Transition<Pair<L, Map<String, Object>>,A>> allTransitions = new HashSet<>();
 
         for(L loc:pg.getInitialLocations()){
+            if(pg.getInitalizations().isEmpty()){
+                Pair<L, Map<String, Object>> state = new Pair<>(loc,new HashMap<>());
+                newTS.addState(state);
+                allStates.add(state);
+                newTS.setInitial(state, true);
+            }
             for(List<String> init: pg.getInitalizations()){
                 Set<Map<String, Object>> evals = new HashSet<>();
                 Map<String, Object> eval = new HashMap<>();
@@ -688,7 +697,54 @@ public class FvmFacadeImpl implements FvmFacade {
 
     @Override
     public <Sts, Saut, A, P> TransitionSystem<Pair<Sts, Saut>, A, Saut> product(TransitionSystem<Sts, A, P> ts, Automaton<Saut, P> aut) {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement product
+        TransitionSystem<Pair<Sts, Saut>, A, Saut> newTS = createTransitionSystem();
+
+        Map<Sts, Set<P>> labels = ts.getLabelingFunction();
+        for(Sts tsState : ts.getInitialStates()) {
+            Set<P> label = labels.get(tsState) != null ? labels.get(tsState) : new HashSet();
+            for(Saut autState: aut.getInitialStates())
+                for(Saut toState : aut.nextStates(autState,label)) {
+                    Pair<Sts, Saut> newSts = new Pair<>(tsState, toState);
+                    newTS.addState(newSts);
+                    newTS.setInitial(newSts,true);
+                }
+        }
+
+        Deque<Pair<Sts, Saut>> states = new LinkedList<>(newTS.getInitialStates());
+        while(!states.isEmpty())
+        {
+            Pair<Sts, Saut> state = states.removeFirst();
+            for(Transition<Sts, A> tsTr : ts.getTransitions())
+            {
+                if(tsTr.getFrom().equals(state.getFirst()))
+                {
+                    A action = tsTr.getAction();
+                    Sts tsToState = tsTr.getTo();
+                    Set<P> labelTsToState =  labels.get(tsToState) != null ? labels.get(tsToState) : new HashSet();
+                    Saut autFromState = state.getSecond();
+
+                    Set<Saut> nextStates = aut.nextStates(autFromState,labelTsToState);
+                    if(nextStates != null) {
+                        for(Saut autToState : nextStates) {
+                            Pair<Sts, Saut> newState = new Pair<>(tsToState, autToState);
+                            if(!newTS.getStates().contains(newState))
+                                states.addLast(newState);
+                            newTS.addState(newState);
+                            newTS.addAction(action);
+                            newTS.addTransition(new Transition<>(state, action , newState));
+                        }
+                    }
+                }
+            }
+        }
+
+        for(Pair<Sts, Saut> state : newTS.getStates())
+        {
+            Saut label = state.getSecond();
+            newTS.addAtomicProposition(label);
+            newTS.addToLabel(state, label);
+        }
+        return newTS;
     }
 
     @Override
@@ -710,6 +766,89 @@ public class FvmFacadeImpl implements FvmFacade {
     }
 
     //Implement up to here
+
+    @Override
+    public <S, A, P, Saut> VerificationResult<S> verifyAnOmegaRegularProperty(TransitionSystem<S, A, P> ts, Automaton<Saut, P> aut) {
+        TransitionSystem<Pair<S, Saut>, A, Saut> productTS = product(ts, aut);
+        for(Pair<S, Saut> prodState : productTS.getStates())
+        {
+            if(aut.getAcceptingStates().contains(prodState.getSecond()))
+            {
+                List<S> cycle = getPathBetweenStates(productTS, prodState, prodState, new HashSet<>(), new LinkedList<>());
+                if(cycle == null) continue;
+                for(Pair<S, Saut> initState : productTS.getInitialStates())
+                {
+                    List<S> prefix = getPathBetweenStates(productTS, initState, prodState, new HashSet<>(), new LinkedList<>());
+                    if(prefix == null) continue;
+                    VerificationFailed<S> ans = new VerificationFailed<>();
+                    ans.setCycle(cycle);
+                    ans.setPrefix(prefix);
+                    return ans;
+                }
+            }
+        }
+        return new VerificationSucceeded<>();
+    }
+
+    private <S, A, Saut> List<S> getPathBetweenStates(TransitionSystem<Pair<S, Saut>, A, Saut> productTS, Pair<S, Saut> from,
+                                                      Pair<S, Saut> to, Set<Pair<S, Saut>> checkedStates, List<S> path)
+    {
+        path.add(from.getFirst());
+        for(Transition<Pair<S, Saut>, A> tr : productTS.getTransitions())
+        {
+            if(tr.getFrom().equals(from))
+            {
+                Pair<S, Saut> nextState = tr.getTo();
+                if(nextState.equals(to))
+                    return path;
+
+                if(!checkedStates.contains(nextState))
+                {
+                    checkedStates.add(nextState);
+                    List<S> tmpAns = getPathBetweenStates(productTS, nextState, to, checkedStates, path);
+                    if(tmpAns != null)
+                        return tmpAns;
+                }
+            }
+        }
+        path.remove(from.getFirst());
+        return null;
+    }
+
+    @Override
+    public <L> Automaton<?, L> LTL2NBA(LTL<L> ltl) {
+        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement LTL2NBA
+    }
+
+    @Override
+    public <L> Automaton<?, L> GNBA2NBA(MultiColorAutomaton<?, L> mulAut) {
+        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement GNBA2NBA
+    }
+
+
+    //Helper functions
+
+    private <S,A,P> void removeUnreachableStates(TransitionSystem<S,A,P> ts, Set<S> states){
+        Set<S> reach = reach(ts);
+        for(S state:states){
+            if(!reach.contains(state)){
+                Set<Transition<S,A>> transitions = ts.getTransitions();
+                Set<Transition<S,A>> transitionsToRemove = new HashSet<>();
+                for(Transition<S,A> tr: transitions){
+                    if(tr.getFrom().equals(state) || tr.getTo().equals(state))
+                        transitionsToRemove.add(tr);
+                }
+                for(Transition<S,A> tr: transitionsToRemove)
+                    ts.removeTransition(tr);
+
+                Set<P> labels = new HashSet<>(ts.getLabel(state));
+                for(P label:labels){
+                    ts.removeLabel(state, label);
+                }
+                ts.removeState(state);
+            }
+        }
+    }
 
     private ProgramGraph<String, String> buildProgramGraph(StmtContext stmt)
     {
@@ -901,46 +1040,5 @@ public class FvmFacadeImpl implements FvmFacade {
             res += ")";
 
         return res;
-    }
-
-
-    @Override
-    public <S, A, P, Saut> VerificationResult<S> verifyAnOmegaRegularProperty(TransitionSystem<S, A, P> ts, Automaton<Saut, P> aut) {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement verifyAnOmegaRegularProperty
-    }
-
-    @Override
-    public <L> Automaton<?, L> LTL2NBA(LTL<L> ltl) {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement LTL2NBA
-    }
-
-    @Override
-    public <L> Automaton<?, L> GNBA2NBA(MultiColorAutomaton<?, L> mulAut) {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement GNBA2NBA
-    }
-
-    private <S,A,P> void removeUnreachableStates(TransitionSystem<S,A,P> ts, Set<S> states){
-        Set<S> reach = reach(ts);
-        for(S state:states){
-            if(!reach.contains(state)){
-                Set<Transition<S,A>> transitions = ts.getTransitions();
-                Set<Transition<S,A>> transitionsToRemove = new HashSet<>();
-                for(Transition<S,A> tr: transitions){
-                    if(tr.getFrom().equals(state) || tr.getTo().equals(state))
-                        transitionsToRemove.add(tr);
-                }
-                for(Transition<S,A> tr: transitionsToRemove)
-                    ts.removeTransition(tr);
-
-                Set<P> labels = new HashSet<>();
-                for(P label:ts.getLabel(state)){
-                    labels.add(label);
-                }
-                for(P label:labels){
-                    ts.removeLabel(state, label);
-                }
-                ts.removeState(state);
-            }
-        }
     }
 }
