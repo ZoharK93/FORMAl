@@ -790,31 +790,6 @@ public class FvmFacadeImpl implements FvmFacade {
         return new VerificationSucceeded<>();
     }
 
-    private <S, A, Saut> List<S> getPathBetweenStates(TransitionSystem<Pair<S, Saut>, A, Saut> productTS, Pair<S, Saut> from,
-                                                      Pair<S, Saut> to, Set<Pair<S, Saut>> checkedStates, List<S> path)
-    {
-        path.add(from.getFirst());
-        for(Transition<Pair<S, Saut>, A> tr : productTS.getTransitions())
-        {
-            if(tr.getFrom().equals(from))
-            {
-                Pair<S, Saut> nextState = tr.getTo();
-                if(nextState.equals(to))
-                    return path;
-
-                if(!checkedStates.contains(nextState))
-                {
-                    checkedStates.add(nextState);
-                    List<S> tmpAns = getPathBetweenStates(productTS, nextState, to, checkedStates, path);
-                    if(tmpAns != null)
-                        return tmpAns;
-                }
-            }
-        }
-        path.remove(from.getFirst());
-        return null;
-    }
-
     @Override
     public <L> Automaton<?, L> LTL2NBA(LTL<L> ltl) {
         throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement LTL2NBA
@@ -1040,5 +1015,30 @@ public class FvmFacadeImpl implements FvmFacade {
             res += ")";
 
         return res;
+    }
+
+    private <S, A, Saut> List<S> getPathBetweenStates(TransitionSystem<Pair<S, Saut>, A, Saut> productTS, Pair<S, Saut> from,
+                                                      Pair<S, Saut> to, Set<Pair<S, Saut>> checkedStates, List<S> path)
+    {
+        path.add(from.getFirst());
+        for(Transition<Pair<S, Saut>, A> tr : productTS.getTransitions())
+        {
+            if(tr.getFrom().equals(from))
+            {
+                Pair<S, Saut> nextState = tr.getTo();
+                if(nextState.equals(to))
+                    return path;
+
+                if(!checkedStates.contains(nextState))
+                {
+                    checkedStates.add(nextState);
+                    List<S> tmpAns = getPathBetweenStates(productTS, nextState, to, checkedStates, path);
+                    if(tmpAns != null)
+                        return tmpAns;
+                }
+            }
+        }
+        path.remove(from.getFirst());
+        return null;
     }
 }
